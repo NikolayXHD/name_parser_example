@@ -8,3 +8,4 @@ __pycache__/
 /.jupyter/migrated
 /.ipython/profile_default/history.sqlite
 *.ipynb
+/notebooks/name_parser/person_labeled.xml
