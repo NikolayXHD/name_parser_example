@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+matplotlib = "*"
+numpy = "*"
+pytest = "*"
+mypy = "*"
+flake8 = "*"
+brunette = "==0.2.0"
+pandas = "*"
+pyarrow = "*"
+jupyter = "*"
+ipython = "*"
+jupyterthemes = "*"
+jupytext = "*"
+seaborn = "*"
+scikit-learn = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.9"
