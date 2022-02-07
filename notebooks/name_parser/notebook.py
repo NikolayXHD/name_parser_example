@@ -14,7 +14,10 @@
 # ---
 
 # %% [markdown]
-# # Получить данные
+# # Построение обучаемого парсера имён собственных
+
+# %% [markdown]
+# ## Загрузка размеченного набора данных
 
 # %%
 import urllib.request
@@ -36,10 +39,10 @@ root = tree.getroot()
 root
 
 # %% [markdown]
-# # Предобработка
-# На первом этапе обучим модель предсказывать тип индивидуального токена.
-#
-# Построим набор данных, где каждое наблюдение - некоторая часть имени, например ``GivenName``.
+# ## Решим задачу классификации отдельного токена
+
+# %% [markdown]
+# ### Построение набора данных
 
 # %%
 import enum
@@ -140,10 +143,10 @@ df = pd.DataFrame()
 for i in range(len(feature_names)):
     df[feature_names[i]] = pd.Series(feature_values[i])
 df['class'] = pd.Series(class_values, dtype='category')
-df['stem'] = df['stem'].astype('category')
+# df['stem'] = df['stem'].astype('category')
 
 # %% [markdown]
-# # Обзор признаков
+# ### Обзор признаков
 
 # %%
 df.info()
@@ -161,7 +164,7 @@ df['stem'].value_counts()
 df['index_from_start'].value_counts()
 
 # %% [markdown]
-# # Обучение модели
+# ### Валидация
 
 # %%
 from sklearn.naive_bayes import ComplementNB
@@ -171,9 +174,67 @@ from sklearn.utils import shuffle
 X = pd.get_dummies(df.drop('class', axis=1))
 y = df['class']
 
+X.head()
+
+# %%
 X, y = shuffle(X, y)
 
 classifier = ComplementNB()
-scores = cross_val_score(classifier, X, y, scoring='f1_weighted')
+scores = cross_val_score(classifier, X, y, scoring='accuracy')
 
 print(scores)
+
+# %% [markdown]
+# ### Обучение
+
+# %%
+classifier.fit(X, y)
+
+# %% [markdown]
+# ### Использование
+
+# %%
+stem_values = set(df['stem'].values)
+stem_values
+
+def build_X_test(doc):
+    assert isinstance(doc, list)
+
+    feature_names = list(get_feature_names())
+    feature_values = [[] for _ in feature_names]
+
+    n = len(doc)
+    for i, token in enumerate(doc):
+        assert isinstance(token, str)
+        for f_i, value in enumerate(
+            extract_features(token, i, n)
+        ):
+            feature_values[f_i].append(value)
+
+    df_test = pd.DataFrame().reindex(columns=X.columns)
+    for i in range(len(feature_names)):
+        if feature_names[i] == 'stem':
+            for known_stem_value in stem_values:
+                df_test['stem_' + known_stem_value] = pd.Series(
+                    [
+                        known_stem_value == stem
+                        for stem in feature_values[i]
+                    ]
+                )
+        else:
+            df_test[feature_names[i]] = pd.Series(feature_values[i])
+    return df_test
+
+X_test = build_X_test(
+    [
+        ['Mauro', 'Camoranezi', 'Jr'],
+        ['Mr.', 'Bond,', 'James'],
+    ]
+)
+y_test = classifier.predict(X_test)
+y_test
+
+# %% [markdown]
+# # Классификация набора токенов 
+
+# %%
