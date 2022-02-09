@@ -48,10 +48,10 @@ root
 import enum
 
 class Casing(enum.Enum):
-    CAPITAL=0
-    LOWER=1
-    UPPER=2
-    OTHER=3
+    CAPITAL='C'
+    LOWER='L'
+    UPPER='U'
+    OTHER='O'
     
     @staticmethod
     def of(val):
@@ -100,11 +100,26 @@ def get_feature_names():
     yield 'index_from_end'
     yield 'casing'
     yield 'contains_number'
+    
     for c in FEATURE_CHARACTERS:
         yield 'contains_' + c
 
+    # Добавление в набор признаков соседних токенов
+    # повышает accuracy распознавания типа отдельных токентов с 70% до 80%
+    yield 'prev_casing'
+    yield 'prev_contains_number'
+    for c in FEATURE_CHARACTERS:
+        yield 'prev_contains_' + c
 
-def extract_features(val, i, n):
+    yield 'next_casing'
+    yield 'next_contains_number'
+    for c in FEATURE_CHARACTERS:
+        yield 'next_contains_' + c
+
+
+def extract_features(vals, i, n):
+    assert isinstance(vals, list)
+    val = vals[i]
     assert isinstance(val, str)
     assert isinstance(i, int)
     assert isinstance(n, int)
@@ -119,6 +134,32 @@ def extract_features(val, i, n):
     yield any(c for c in stem if c.isdigit())  # contains_number
     for c in FEATURE_CHARACTERS:
         yield c in val
+    
+    if i > 0:
+        prev_val = vals[i - 1]
+        prev_stem = ''.join(c for c in prev_val if c.isalnum())
+        yield Casing.of(prev_stem).value
+        yield any(c for c in prev_stem if c.isdigit())  # contains_number
+        for c in FEATURE_CHARACTERS:
+            yield c in prev_val
+    else:
+        yield Casing.OTHER.value
+        yield False
+        for c in FEATURE_CHARACTERS:
+            yield False
+    
+    if i < n - 1:
+        next_val = vals[i + 1]
+        next_stem = ''.join(c for c in next_val if c.isalnum())
+        yield Casing.of(next_stem).value
+        yield any(c for c in next_stem if c.isdigit())  # contains_number
+        for c in FEATURE_CHARACTERS:
+            yield c in next_val
+    else:
+        yield Casing.OTHER.value
+        yield False
+        for c in FEATURE_CHARACTERS:
+            yield False
 
 
 # %%
@@ -130,20 +171,26 @@ class_values = []
 
 for name_tag in root:
     assert name_tag.tag == 'Name'
-
-    n = len(name_tag)
-    for i, name_part_tag in enumerate(name_tag):
+    values = [
+        name_part_tag.text
+        for name_part_tag in name_tag
+    ]
+    classes = [
+        name_part_tag.tag 
+        for name_part_tag in name_tag
+    ]
+    n = len(values)
+    for i in range(n):
         for f_i, value in enumerate(
-            extract_features(name_part_tag.text, i, n)
+            extract_features(values, i, n)
         ):
             feature_values[f_i].append(value)
-        class_values.append(name_part_tag.tag)
+    class_values.extend(classes)
 
 df = pd.DataFrame()
 for i in range(len(feature_names)):
     df[feature_names[i]] = pd.Series(feature_values[i])
 df['class'] = pd.Series(class_values, dtype='category')
-# df['stem'] = df['stem'].astype('category')
 
 # %% [markdown]
 # ### Обзор признаков
@@ -163,6 +210,33 @@ df['stem'].value_counts()
 # %%
 df['index_from_start'].value_counts()
 
+# %%
+df['casing'].value_counts()
+
+# %%
+df['next_casing'].value_counts()
+
+# %%
+df['prev_casing'].value_counts()
+
+# %%
+df['contains_"'].value_counts()
+
+# %%
+df['next_contains_"'].value_counts()
+
+# %%
+df['prev_contains_"'].value_counts()
+
+# %%
+len(df[df['contains_"'] & df['next_contains_"']])
+
+# %%
+len(df[df['contains_"'] & df['prev_contains_"']])
+
+# %%
+len(df[df['prev_contains_"'] & df['next_contains_"']])
+
 # %% [markdown]
 # ### Валидация
 
@@ -179,8 +253,8 @@ X.head()
 # %%
 X, y = shuffle(X, y)
 
-classifier = ComplementNB()
-scores = cross_val_score(classifier, X, y, scoring='accuracy')
+classifier_val = ComplementNB()
+scores = cross_val_score(classifier_val, X, y, cv=5, scoring='accuracy')
 
 print(scores)
 
@@ -204,10 +278,9 @@ def build_X_test(doc):
     feature_values = [[] for _ in feature_names]
 
     n = len(doc)
-    for i, token in enumerate(doc):
-        assert isinstance(token, str)
+    for i in range(n):
         for f_i, value in enumerate(
-            extract_features(token, i, n)
+            extract_features(doc, i, n)
         ):
             feature_values[f_i].append(value)
 
@@ -221,20 +294,37 @@ def build_X_test(doc):
                         for stem in feature_values[i]
                     ]
                 )
+        elif feature_names[i] == 'casing':
+            for enum_value in Casing:
+                df_test['casing_' + enum_value.value] = pd.Series(
+                    enum_value.value == casing
+                    for casing in feature_values[i]
+                )
+        elif feature_names[i] == 'next_casing':
+            for enum_value in Casing:
+                df_test['next_casing_' + enum_value.value] = pd.Series(
+                    enum_value.value == casing
+                    for casing in feature_values[i]
+                )
+        elif feature_names[i] == 'prev_casing':
+            for enum_value in Casing:
+                df_test['prev_casing_' + enum_value.value] = pd.Series(
+                    enum_value.value == casing
+                    for casing in feature_values[i]
+                )
         else:
             df_test[feature_names[i]] = pd.Series(feature_values[i])
     return df_test
 
 X_test = build_X_test(
-    [
-        ['Mauro', 'Camoranezi', 'Jr'],
-        ['Mr.', 'Bond,', 'James'],
-    ]
+    ['Mauro', 'Camoranezi', 'Jr'],
 )
-y_test = classifier.predict(X_test)
-y_test
+X_test
+# y_test = classifier.predict(X_test)
+# y_test
 
 # %% [markdown]
 # # Классификация набора токенов 
 
 # %%
+list(v for v in Casing)
