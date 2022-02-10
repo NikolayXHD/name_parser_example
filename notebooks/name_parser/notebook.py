@@ -348,7 +348,7 @@ class FacadeClassifier:
         """
         assert isinstance(name_parts, list)
         X_test = self._build_X_predict([name_parts])
-        return list(self._classifier.predict(X_test))
+        return tuple(self._classifier.predict(X_test))
     
     def predict(self, names):
         """
@@ -361,21 +361,9 @@ class FacadeClassifier:
         i = 0
         for name_parts in names:
             n = len(name_parts)
-            yield list(y_pred[i : i + n])
+            yield tuple(y_pred[i : i + n])
             i += n
 
-
-# %%
-facade_classifier = FacadeClassifier()
-facade_classifier.fit(root)
-
-predicted_tags = facade_classifier.predict(
-    [
-        ['Mauro', 'Camoranezi', 'Jr'],
-        ['Cathrine', 'III'],
-    ]
-)
-list(predicted_tags)
 
 # %% [markdown]
 # ### Измерим accuracy при классификации имени целиком
@@ -420,9 +408,9 @@ def cross_validate_facade_classifier(
             for i in test
         ]
         actual_tags = [
-            [
+            tuple(
                 name_part_tag.tag for name_part_tag in name_tags[i]
-            ]
+            )
             for i in test
         ]
         predicted_tags = list(facade_classifier.predict(names))
@@ -439,10 +427,171 @@ def cross_validate_facade_classifier(
     return scores
 
 scores = cross_validate_facade_classifier(FacadeClassifier(), root, shuffle=True)
-scores
+print(scores)
+print(f'{np.array(scores).mean():.3f} ± {np.array(scores).std():.3f}')
 
 # %% [markdown]
-# # Классификация набора токенов 
+# ## Классификация с учётом распределения паттернов в обучающей выборке
+#
+# Под паттерном подразумевается порядок частей 1 имени, например
+# ```
+# ('GivenName', 'Surname', 'SuffixGenerational')
+# ```
 
 # %%
-[0, 1, 2, 3][0: 2]
+from collections import Counter, defaultdict
+
+class FacadeClassifierWholistic(FacadeClassifier):
+    """
+    Классификатор для имени целиком: list[name_part] -> list[tag]
+    В отличие от родительского класса, учитывает распределение наборов тегов
+    в обучающей выборке.
+
+    Под набором тегов подразумевается теги всех частей имени
+    """
+    def fit(self, name_tags):
+        super().fit(name_tags)
+        num_to_pattern_to_count = defaultdict(Counter)
+        num_name_parts = 0
+        for name_tag in name_tags:
+            assert name_tag.tag == 'Name'
+            classes = tuple(
+                name_part_tag.tag 
+                for name_part_tag in name_tag
+            )
+            num_to_pattern_to_count[len(classes)].update([classes])
+            num_name_parts += len(name_tag)
+            
+        self._num_to_pattern_to_count = num_to_pattern_to_count
+        self._num_patterns = len(name_tags)
+        self._num_name_parts = num_name_parts
+        self._class_to_index = {
+            klass: i
+            for i, klass in enumerate(self._classifier.classes_)
+        }
+    
+    def predict_one(self, name_parts):
+        """
+        Классифицировать части имени
+        list[name_part] -> list[tag]
+        """
+        assert isinstance(name_parts, list)
+        X_test = self._build_X_predict([name_parts])
+        # Согласно описанию алгоритмов NaiveBayes в документации scikit-learn
+        # на predict_proba не стоит полагаться.
+        # Здесь мы осознанно пренебрегаем этим, полагаясь на кросс-валидацию
+        # с измерением accuracy
+        y_pred_proba = self._classifier.predict_proba(X_test)
+        return self._choose_pattern(y_pred_proba)
+    
+    def predict(self, names):
+        """
+        Классифицировать части имени для множества имён
+        list[list[name_part]] -> typing.Iterable[list[tag]]
+        """
+        assert isinstance(names, list)
+        X_test = self._build_X_predict(names)
+        y_pred = self._classifier.predict_proba(X_test)
+        i = 0
+        for name_parts in names:
+            n = len(name_parts)
+            yield self._choose_pattern(y_pred[i : i + n,:])
+            i += n
+    
+    def _choose_pattern(self, y_pred_proba):
+        num_name_parts = y_pred_proba.shape[0]
+        pattern_to_count = self._num_to_pattern_to_count[num_name_parts]
+        pattern_to_proba = Counter()
+        for pattern, count in pattern_to_count.items():
+            proba = count
+            for i, part_class in enumerate(pattern):
+                class_index = self._class_to_index[part_class]
+                proba *= y_pred_proba[i][class_index]
+            pattern_to_proba[pattern] = proba
+        obvious_pattern = tuple(
+            self._classifier.classes_[y_pred_proba[i].argmax()]
+            for i in range(num_name_parts)
+        )
+        if obvious_pattern not in pattern_to_proba:
+            # примем за ожидаемую частоту паттрна, которого нет в 
+            # обучающей выборке размера N
+            # P = 0.5 * 1 / N
+            proba = 0.5
+            for i in range(num_name_parts):
+                proba *= y_pred_proba[i].max()
+            pattern_to_proba[obvious_pattern] = proba
+
+        return pattern_to_proba.most_common(1)[0][0]
+
+
+# %% [markdown]
+# ### Оценим accuracy
+
+# %%
+scores = cross_validate_facade_classifier(FacadeClassifierWholistic(), root, shuffle=True)
+print(scores)
+print(f'{np.array(scores).mean():.3f} ± {np.array(scores).std():.3f}')
+
+# %% [markdown]
+# По сравнению с предыдущим результатом, без учёта распределения паттернов, результат не улучшился.
+
+# %% [markdown]
+# # Ниже можно вручную взаимодейсвовать с классификаторами
+
+# %%
+facade_classifier_wholistic = FacadeClassifierWholistic()
+facade_classifier_wholistic.fit(root)
+
+facade_classifier = FacadeClassifier()
+facade_classifier.fit(root)
+
+# %% [markdown]
+# ### Классификатор с учётом распределения паттернов
+
+# %%
+predicted_tags = facade_classifier_wholistic.predict(
+    [
+        ['Mauro', 'Camoranezi', 'Jr'],
+        ['Cathrine', 'III'],
+    ]
+)
+for prediction in predicted_tags:
+    print(prediction)
+
+# %% [markdown]
+# ### Классификатор, учитывающий признаки отдельных токенов
+
+# %%
+predicted_tags = facade_classifier.predict(
+    [
+        ['Mauro', 'Camoranezi', 'Jr'],
+        ['Cathrine', 'III'],
+    ]
+)
+for prediction in predicted_tags:
+    print(prediction)
+
+
+# %% [markdown]
+# # Поддержим вывод, совпадающий с исходным форматом XML
+
+# %%
+def parse(lines, classifier):
+    names = [line.split(' ') for line in lines.split('\n')]
+    predictions = list(classifier.predict(names))
+    return '\n'.join(
+        ' '.join(
+            f'<{predictions[j][i]}>{names[j][i]}</{predictions[j][i]}>'
+            for i in range(len(names[j]))
+        )
+        for j in range(len(names))
+    )
+
+
+# %%
+output = parse(
+    'Mr. Alexey Konstantinovich Tolstoy Sr\n'
+    'Mrs Anna Karenina',
+    facade_classifier_wholistic
+)
+print(output)
