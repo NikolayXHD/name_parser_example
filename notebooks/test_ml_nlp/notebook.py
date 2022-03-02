@@ -284,7 +284,7 @@ def create_segmenter():
     # поле rules ссылается на константу модуля, мы не хотим её менять
     segmenter.rules = [*segmenter.rules, ChemicalRule()]
     return segmenter
-    
+
 def tokenize_patched(txt):
     segmenter = create_segmenter()
     tokens = segmenter(txt)
@@ -340,7 +340,122 @@ print(
 )
 
 # %% [markdown]
-# ## Задача 2
+# ### 2.1 Удалить стоп-слова
+# Будем считать стоп-словами
+# - междометия
+# - местоимения
+# - предлоги
+# - союзы
+# - частицы
+#
+# Чтобы определить часть речи, выполним морфологический разбор
+
+# %%
+from natasha import (
+    Segmenter,
+    MorphVocab,
+    NewsEmbedding,
+    NewsMorphTagger,
+    Doc,
+)
+
+segmenter = Segmenter()  
+morph_vocab = MorphVocab()
+emb = NewsEmbedding()
+morph_tagger = NewsMorphTagger(emb)
+
+def parse_morphology(txt):
+    doc = Doc(txt)
+    doc.segment(segmenter)
+    doc.tag_morph(morph_tagger)
+    return doc
+
+def print_morphology(txt):
+    doc = parse_morphology(txt)
+    for s in doc.sents:
+        s.morph.print()
+
+EXAMPLE_TEXT = 'А мама и папа те самые, и посмотрели бы под раму, как если бы не клюнуло нас кое-что'
+print_morphology(EXAMPLE_TEXT)
+
+# %%
+STOPWORD_POS = [
+    'CCONJ',  # союз
+    'SCONJ',  # союз
+    'PRON',  # местоимение
+    'ADP',  # предлог
+    'INTJ',  # междометие
+    'AUX',  # частица
+    'PART', # частица
+    'DET',  # определитель
+    'PUNCT',  # знак препинания
+]
+
+
+def print_stopword_tokens(txt):
+    doc = parse_morphology(txt)
+    for s in doc.sents:
+        for t in s.morph.tokens:
+            if t.pos in STOPWORD_POS:
+                print(f'{t.pos:>6}: {t.text}')
+
+print_stopword_tokens(EXAMPLE_TEXT)
+
+
+# %%
+def is_not_stopword(token):
+    return token.pos not in STOPWORD_POS
+
+
+def filter_tokens(txt, token_filters):
+    doc = parse_morphology(txt)
+    return ' '.join(
+        t.text
+        for s in doc.sents
+        for t in s.morph.tokens
+        if all(
+            token_filter(t) 
+            for token_filter in token_filters
+        )
+    )
+
+
+def remove_stopwords(txt):
+    return filter_tokens(txt, [is_not_stopword])
+    
+print(remove_stopwords(articles[0]))
+
+# %%
+articles_stopwords_removed = [
+    remove_stopwords(article) for article in articles
+]
+
+articles_stopwords_removed
+
+# %% [markdown]
+# ### 2.2. Удалить все слова, которые не написаны кириллицей. Можно использовать регулярки.
+
+# %%
+import re
+
+CYRILLIC_PATTERN = re.compile(r'[а-я]', re.IGNORECASE)
+
+def is_cyrillic(token):
+    return bool(CYRILLIC_PATTERN.match(token.text))
+
+print(filter_tokens(articles[0], [is_not_stopword, is_cyrillic]))
+
+# %%
+acticles_stopwords_removed_cyrillic = [
+    filter_tokens(article, [is_not_stopword, is_cyrillic])
+    for article in articles
+]
+
+acticles_stopwords_removed_cyrillic
+
+# %% [markdown]
+# ### 2.3. Лемматизировать.
+#   - Задача со звёздочкой - лемматизация с учётом части речи исходного слова. Например, "мыла" -> возможные леммы: "мыло" (если "мыла" - существительное в родительном падеже), "мыть" (если глагол в прошедшем времени и женском роде). Можно (и желательно) использовать готовые библиотеки.
 
 # %%
 
