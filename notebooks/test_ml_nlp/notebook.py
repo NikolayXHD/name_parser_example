@@ -353,14 +353,12 @@ print(
 # %%
 from natasha import (
     Segmenter,
-    MorphVocab,
     NewsEmbedding,
     NewsMorphTagger,
     Doc,
 )
 
 segmenter = Segmenter()  
-morph_vocab = MorphVocab()
 emb = NewsEmbedding()
 morph_tagger = NewsMorphTagger(emb)
 
@@ -387,7 +385,7 @@ STOPWORD_POS = [
     'INTJ',  # междометие
     'AUX',  # частица
     'PART', # частица
-    'DET',  # определитель
+    'DET',  # определитель (тот)
     'PUNCT',  # знак препинания
 ]
 
@@ -441,6 +439,9 @@ import re
 CYRILLIC_PATTERN = re.compile(r'[а-я]', re.IGNORECASE)
 
 def is_cyrillic(token):
+    """
+    Хотя бы 1 буква должна быть кириллицей
+    """
     return bool(CYRILLIC_PATTERN.match(token.text))
 
 print(filter_tokens(articles[0], [is_not_stopword, is_cyrillic]))
@@ -458,6 +459,33 @@ acticles_stopwords_removed_cyrillic
 #   - Задача со звёздочкой - лемматизация с учётом части речи исходного слова. Например, "мыла" -> возможные леммы: "мыло" (если "мыла" - существительное в родительном падеже), "мыть" (если глагол в прошедшем времени и женском роде). Можно (и желательно) использовать готовые библиотеки.
 
 # %%
+from natasha import MorphVocab
+
+morph_vocab = MorphVocab()
+
+
+def get_lemmatized_doc(txt):
+    doc = Doc(txt)
+    doc.segment(segmenter)
+    doc.tag_morph(morph_tagger)
+    for token in doc.tokens:
+        token.lemmatize(morph_vocab)
+    return doc
+
+
+def get_lemmatized_txt(txt):
+    doc = get_lemmatized_doc(txt)
+    return ' '.join(token.lemma for token in doc.tokens)
+
+print_lemmatized_doc('Мама мыла раму, ей не хватало мыла.')
+
+# %%
+articles_lemmatized = [
+    get_lemmatized_txt(article)
+    for article in articles
+]
+
+articles_lemmatized
 
 # %% [markdown] id="krTGSvSORYSC"
 # _____
