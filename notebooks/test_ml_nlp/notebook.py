@@ -487,6 +487,25 @@ articles_lemmatized = [
 
 articles_lemmatized
 
+# %% [markdown]
+# ### 3. Найти именованные сущности в текстах (NER)
+
+# %%
+from natasha import NewsNERTagger
+
+ner_tagger = NewsNERTagger(emb)
+
+
+def print_ner(txt):
+    doc = Doc(txt)
+    doc.segment(segmenter)
+    doc.tag_ner(ner_tagger)
+    
+    doc.ner.print()
+
+for article in articles:
+    print_ner(article)
+
 # %% [markdown] id="krTGSvSORYSC"
 # _____
 # ### Часть 2. Простая задачка на ML
