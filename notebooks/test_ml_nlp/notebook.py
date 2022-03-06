@@ -473,7 +473,7 @@ def get_lemmatized_txt(txt, token_filters):
     return ' '.join(
         t.lemma
         for s in doc.sents
-        for t in s.morph.tokens
+        for t in s.tokens
         if all(
             token_filter(t) 
             for token_filter in token_filters
@@ -513,6 +513,39 @@ for article in articles:
 # ### 4 Попарно посчитать близость текстов
 
 # %%
+from scipy.spatial import distance
+
+def get_text_vector(txt):
+    doc = Doc(txt)
+    doc.segment(segmenter)
+    result = None
+    for token in doc.tokens:
+        try:
+            vect = emb[token.text]
+        except KeyError:
+            vect = None
+        if vect is None:
+            continue
+        if result is None:
+            result = vect
+        else:
+            result += vect
+    return result
+
+article_vectors = [
+    get_text_vector(article) for article in articles
+]
+
+pairwise_distances = sorted(
+    (
+        (distance.cosine(article_vectors[i], article_vectors[j]), (i, j))
+        for i in range(len(articles))
+        for j in (range(i))
+    )
+)
+
+for d, (i, j) in pairwise_distances:
+    print(f'{d:.2f} {topics[i]:>25} <-> {topics[j]}')
 
 # %% [markdown] id="krTGSvSORYSC"
 # _____
