@@ -464,24 +464,27 @@ from natasha import MorphVocab
 morph_vocab = MorphVocab()
 
 
-def get_lemmatized_doc(txt):
+def get_lemmatized_txt(txt, token_filters):
     doc = Doc(txt)
     doc.segment(segmenter)
     doc.tag_morph(morph_tagger)
     for token in doc.tokens:
         token.lemmatize(morph_vocab)
-    return doc
+    return ' '.join(
+        t.lemma
+        for s in doc.sents
+        for t in s.morph.tokens
+        if all(
+            token_filter(t) 
+            for token_filter in token_filters
+        )
+    )
 
-
-def get_lemmatized_txt(txt):
-    doc = get_lemmatized_doc(txt)
-    return ' '.join(token.lemma for token in doc.tokens)
-
-print_lemmatized_doc('Мама мыла раму, ей не хватало мыла.')
+print(get_lemmatized_txt('Мама мыла раму, ей не хватало мыла.', []))
 
 # %%
 articles_lemmatized = [
-    get_lemmatized_txt(article)
+    get_lemmatized_txt(article, [is_not_stopword, is_cyrillic])
     for article in articles
 ]
 
@@ -505,6 +508,11 @@ def print_ner(txt):
 
 for article in articles:
     print_ner(article)
+
+# %% [markdown]
+# ### 4 Попарно посчитать близость текстов
+
+# %%
 
 # %% [markdown] id="krTGSvSORYSC"
 # _____
