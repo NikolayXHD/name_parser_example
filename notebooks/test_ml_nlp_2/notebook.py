@@ -53,16 +53,122 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
 train = pd.read_csv('train.csv')
-y = train['Survived']
+train.info()
 
-not_number_fields = [col for col in list(train.columns) if train[col].dtype == np.object]
+# %%
+train['Age'].hist()
 
-train.drop(columns=not_number_fields, inplace=True)
-train.fillna(0, inplace=True)
+# %%
+train['Name'].value_counts()
 
-X_train, X_test, y_train, y_test = train_test_split(train, y, test_size=0.2, random_state=5757)
+# %%
+train['Sex'].value_counts()
 
-model = LogisticRegression()
+# %%
+train['Ticket'].nunique()
+
+# %%
+train['Cabin'].value_counts()
+
+# %%
+cabin_letters = set()
+cabin_digits = set()
+for c in train['Cabin'].dropna().values:
+    for part in c.split(' '):
+        cabin_letters.add(part[0])
+        cabin_digits.add(part[1:])
+        if len(part) < 2:
+            print(part)
+
+# %%
+cabin_letters
+
+# %%
+cabin_digits
+
+
+# %%
+def _get_cabin_number(value):
+    if not value:
+        return -1
+    parts = [
+        int(part[1:])
+        for part in value.split(' ')
+        if len(part) > 1
+    ]
+    if not parts:
+        return -1
+    return np.median(parts)
+
+get_cabin_number_vect = np.vectorize(_get_cabin_number)
+
+for example in ('A12', 'B C8', 'C3 C13', 'D', ''):
+    print(f'"{example}": {_get_cabin_number(example)}')
+
+# %%
+train['Embarked'].value_counts()
+
+# %%
+
+fields_numeric = train.drop(['Age', 'PassengerId'], axis=1).select_dtypes(
+    include=['int64', 'float64']
+)
+
+field_sex = (train['Sex'] == 'female').astype('int').rename('Sex_female')
+fields_embarked = pd.get_dummies(train[['Embarked']].fillna('na'))
+fields_embarked
+
+field_cabin_raw = train['Cabin'].fillna('')
+fields_cabin_letter = pd.DataFrame(
+    {
+        'Cabin_' + letter: field_cabin_raw.str.contains(letter).astype('int')
+        for letter in cabin_letters
+    }
+)
+
+field_age = train['Age'].fillna(-1).astype('int')
+
+fields_cabin_letter['Cabin_na'] = train['Cabin'].isna().astype('int')
+
+field_cabin_number = pd.Series(
+    get_cabin_number_vect(train['Cabin'].fillna('').values), 
+    name='Cabin_number')
+df = pd.concat(
+    [
+        fields_numeric,
+        field_age,
+        field_sex,
+        fields_embarked,
+        fields_cabin_letter,
+        field_cabin_number
+    ],
+    axis=1,
+)
+df
+
+# %%
+import seaborn as sns
+
+sns.pairplot(data=df, hue='Survived')
+
+# %%
+from sklearn.model_selection import cross_val_score
+
+from sklearn.ensemble import RandomForestClassifier
+
+X = df.drop('Survived', axis=1)
+y = df['Survived']
+
+clf = RandomForestClassifier()
+
+scores = cross_val_score(clf, X, y, scoring='accuracy')
+print(f'r2 scores: {scores}')
+print(f'r2 = {scores.mean():.6f} ± {scores.std():.6f}')
+
+# %%
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=5757)
+
+model = RandomForestClassifier()
 model.fit(X_train, y_train)
 predict = model.predict(X_test)
-accuracy_score(y_test, predict)
+print(accuracy_score(y_test, predict))
