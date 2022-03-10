@@ -62,3 +62,34 @@ The small palazzo is called "palazzetto", sometimes with a watchtower.
 The walls are decorated with rustication, the windows of the first floors are barred: urban life at that time was turbulent.
 The front, reception hall for guests of the Italian palazzo is called the foresteria.
 """
+
+# %%
+# !pip install nltk
+
+# %%
+import nltk
+
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+nltk.download('punkt')
+
+# %%
+from nltk.tokenize import word_tokenize
+from nltk.translate import meteor_score
+
+def get_meteor_score(reference, hypothesis):
+    ref_tokens = word_tokenize(reference)
+    hyp_tokens = word_tokenize(hypothesis)
+    return meteor_score.meteor_score([ref_tokens], hyp_tokens)
+
+score = get_meteor_score(edited, mt)
+print(score)
+
+# %% [markdown]
+# ### Почему meteor_score, и почему этого достаточно
+#
+# - Имеет более высокую корреляцию с человеческой оценкой качества, чем bleu. Насколько мне стало известно из Википедии, драматических улучшений в степени корреляции с человеческой оценкой по сравнению с bleu не достигнуто, так что утверждение "метрика несполько лучше коррелирует, чем bleu" равносильно "метрика одна из лучших по степени корреляции на данный момент".
+# - В отличие от bleu, учитывает не только precision, но и recall, т.е. потеря части информации по сравнению с эталонным переводом
+# - В отличие от bleu, учитывает синонимы
+# - Учитывает совпадение порядка слов
+# - есть готовая реализация, не нужно писать самому
